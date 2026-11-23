@@ -37,6 +37,8 @@ interface QuestionResponse {
   questions: Phase1QuestionItem[];
   timeLimitMinutes: number;
   sessionCreatedAt: string;
+  serverNowMs?: number;
+  remainingSeconds?: number;
 }
 
 interface RuleItem {
@@ -110,6 +112,7 @@ const ArenaPage: React.FC = () => {
   const [battleQuestions, setBattleQuestions] = useState<Phase1QuestionItem[]>([]);
   const [battleTimeLimitSeconds, setBattleTimeLimitSeconds] = useState<number>(30 * 60);
   const [battleDeadlineMs, setBattleDeadlineMs] = useState<number>(Date.now() + 30 * 60 * 1000);
+  const [battleRemainingSeconds, setBattleRemainingSeconds] = useState<number | null>(null);
   const [hasStartedBattle, setHasStartedBattle] = useState<boolean>(false);
   const [isStartSubmitting, setIsStartSubmitting] = useState<boolean>(false);
   const [activeIndex, setActiveIndex] = useState<number>(0);
@@ -155,14 +158,27 @@ const ArenaPage: React.FC = () => {
       ? Math.floor(response.timeLimitMinutes)
       : 30;
     const timeLimitSeconds = safeLimitMinutes * 60;
+    const serverRemaining = Number.isFinite(response.remainingSeconds)
+      ? Math.max(0, Math.min(timeLimitSeconds, Math.floor(response.remainingSeconds as number)))
+      : null;
     const createdAtMs = Date.parse(response.sessionCreatedAt);
-    const resolvedDeadlineMs = Number.isFinite(createdAtMs)
+    const legacyDeadlineMs = Number.isFinite(createdAtMs)
       ? createdAtMs + timeLimitSeconds * 1000
       : Date.now() + timeLimitSeconds * 1000;
+    const clampedLegacyDeadlineMs = Math.max(
+      Date.now(),
+      Math.min(legacyDeadlineMs, Date.now() + timeLimitSeconds * 1000)
+    );
+    const resolvedDeadlineMs = serverRemaining === null
+      ? clampedLegacyDeadlineMs
+      : Date.now() + serverRemaining * 1000;
+    setBattleDeadlineMs(resolvedDeadlineMs);
+    if (serverRemaining !== null) {
+      setBattleTimeLimitSeconds(timeLimitSeconds);
+      setBattleRemainingSeconds(serverRemaining);
+    }
 
     setBattleQuestions(response.questions);
-    setBattleTimeLimitSeconds(timeLimitSeconds);
-    setBattleDeadlineMs(resolvedDeadlineMs);
     setArenaState("battle");
   };
 
@@ -614,6 +630,7 @@ const ArenaPage: React.FC = () => {
           questions={battleQuestions}
           timeLimitSeconds={battleTimeLimitSeconds}
           deadlineMs={battleDeadlineMs}
+          initialRemainingSeconds={battleRemainingSeconds}
           onSubmitted={handleSubmitted}
         />
       ) : null}

@@ -20,10 +20,18 @@ interface Phase1QuestionPanelProps {
   questions: Phase1QuestionItem[];
   timeLimitSeconds: number;
   deadlineMs: number;
+  initialRemainingSeconds?: number | null;
   onSubmitted: (score: number) => void;
 }
 
-const Phase1QuestionPanel: React.FC<Phase1QuestionPanelProps> = ({ usn, questions, timeLimitSeconds, deadlineMs, onSubmitted }) => {
+const Phase1QuestionPanel: React.FC<Phase1QuestionPanelProps> = ({
+  usn,
+  questions,
+  timeLimitSeconds,
+  deadlineMs,
+  initialRemainingSeconds,
+  onSubmitted
+}) => {
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [confirmedQuestions, setConfirmedQuestions] = useState<Set<string>>(new Set<string>());
@@ -50,14 +58,30 @@ const Phase1QuestionPanel: React.FC<Phase1QuestionPanelProps> = ({ usn, question
   }, [timeLimitSeconds]);
   const fallbackDeadlineMs = useMemo<number>(() => Date.now() + resolvedTimeLimitSeconds * 1000, [resolvedTimeLimitSeconds]);
   const resolvedDeadlineMs = Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : fallbackDeadlineMs;
+  const serverRemainingSeconds = Number.isFinite(initialRemainingSeconds)
+    ? Math.max(0, Math.min(resolvedTimeLimitSeconds, Math.floor(initialRemainingSeconds as number)))
+    : null;
   const [secondsLeft, setSecondsLeft] = useState<number>(() =>
-    Math.max(0, Math.floor((resolvedDeadlineMs - Date.now()) / 1000))
+    serverRemainingSeconds !== null
+      ? serverRemainingSeconds
+      : Math.max(0, Math.min(resolvedTimeLimitSeconds, Math.floor((resolvedDeadlineMs - Date.now()) / 1000)))
   );
   const isTimeUp = secondsLeft <= 0;
 
   useEffect(() => {
+    if (serverRemainingSeconds !== null) {
+      setSecondsLeft(serverRemainingSeconds);
+      const timerId = window.setInterval(() => {
+        setSecondsLeft((previous) => Math.max(0, previous - 1));
+      }, 1000);
+
+      return () => {
+        window.clearInterval(timerId);
+      };
+    }
+
     const updateSeconds = (): void => {
-      setSecondsLeft(Math.max(0, Math.floor((resolvedDeadlineMs - Date.now()) / 1000)));
+      setSecondsLeft(Math.max(0, Math.min(resolvedTimeLimitSeconds, Math.floor((resolvedDeadlineMs - Date.now()) / 1000))));
     };
 
     updateSeconds();
@@ -69,7 +93,7 @@ const Phase1QuestionPanel: React.FC<Phase1QuestionPanelProps> = ({ usn, question
     return () => {
       window.clearInterval(timerId);
     };
-  }, [resolvedDeadlineMs]);
+  }, [resolvedDeadlineMs, resolvedTimeLimitSeconds, serverRemainingSeconds]);
 
   useEffect(() => {
     const savedAnswers = window.localStorage.getItem(answersStorageKey);

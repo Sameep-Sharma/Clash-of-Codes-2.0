@@ -24,6 +24,8 @@ export async function GET(
     questions?: Array<{ questionId: string; text: string; options: Array<{ id: string; text: string }> }>;
     timeLimitMinutes?: number;
     sessionCreatedAt?: string;
+    serverNowMs?: number;
+    remainingSeconds?: number;
   }>
 > {
   try {
@@ -54,11 +56,20 @@ export async function GET(
     }
 
     const timeLimitMinutes = getPhase1TimeLimitMinutes();
+    const serverNowMs = Date.now();
+    const timeLimitSeconds = timeLimitMinutes * 60;
+    const deadlineMs = session.createdAt.getTime() + timeLimitSeconds * 1000;
+    const remainingSeconds = Math.max(
+      0,
+      Math.min(timeLimitSeconds, Math.ceil((deadlineMs - serverNowMs) / 1000))
+    );
 
     return NextResponse.json({
       questions,
       timeLimitMinutes,
-      sessionCreatedAt: session.createdAt.toISOString()
+      sessionCreatedAt: session.createdAt.toISOString(),
+      serverNowMs,
+      remainingSeconds
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unexpected error";
